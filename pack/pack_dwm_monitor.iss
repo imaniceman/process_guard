@@ -33,13 +33,43 @@ PrivilegesRequired=admin
 Source: "check_restart_dwm.exe"; DestDir: "{app}"
 [Code]
 function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+  UserChoice: Integer;
 begin
   Result := True;
   if not FileExists(ExpandConstant('{sys}\sc.exe')) then
   begin
     MsgBox('This installer requires the Windows Service Control Manager, which was not found on your system. Please ensure you are running a supported version of Windows.', mbError, MB_OK);
     Result := False;
+    Exit;
   end;
+  // 检查程序是否已安装（通过检查服务是否存在）
+  if Exec(ExpandConstant('{sys}\sc.exe'), 'query DWMMonitorService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+  begin
+    // 已安装，提示用户选择
+    UserChoice := MsgBox('DWM Monitor is already installed. Do you want to uninstall the existing version first?', mbConfirmation, MB_YESNO);
+    if UserChoice = IDYES then
+    begin
+      // 用户选择卸载，尝试停止现有的服务
+      Exec(ExpandConstant('{sys}\sc.exe'), 'stop DWMMonitorService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+      // 等待服务完全停止
+      Sleep(2000);
+
+      // 尝试删除现有的服务
+      Exec(ExpandConstant('{sys}\sc.exe'), 'delete DWMMonitorService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+      // 再次等待，确保服务被完全删除
+      Sleep(1000);
+    end
+    else
+    begin
+      // 用户选择不卸载，取消安装
+      Result := False;
+    end;
+  end;
+
 end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
