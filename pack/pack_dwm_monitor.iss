@@ -31,6 +31,8 @@ OutputDir=.
 PrivilegesRequired=admin
 [files]
 Source: "check_restart_dwm.exe"; DestDir: "{app}"
+Source: "start_service.bat"; DestDir: "{app}"
+Source: "stop_service.bat"; DestDir: "{app}"
 [Code]
 function InitializeSetup(): Boolean;
 var
@@ -44,28 +46,28 @@ begin
     Result := False;
     Exit;
   end;
-  // ¼ì²é³ÌÐòÊÇ·ñÒÑ°²×°£¨Í¨¹ý¼ì²é·þÎñÊÇ·ñ´æÔÚ£©
+  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç·ï¿½ï¿½Ñ°ï¿½×°ï¿½ï¿½Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç·ï¿½ï¿½ï¿½Ú£ï¿½
   if Exec(ExpandConstant('{sys}\sc.exe'), 'query DWMMonitorService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
   begin
-    // ÒÑ°²×°£¬ÌáÊ¾ÓÃ»§Ñ¡Ôñ
+    // ï¿½Ñ°ï¿½×°ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½Ã»ï¿½Ñ¡ï¿½ï¿½
     UserChoice := MsgBox('DWM Monitor is already installed. Do you want to uninstall the existing version first?', mbConfirmation, MB_YESNO);
     if UserChoice = IDYES then
     begin
-      // ÓÃ»§Ñ¡ÔñÐ¶ÔØ£¬³¢ÊÔÍ£Ö¹ÏÖÓÐµÄ·þÎñ
+      // ï¿½Ã»ï¿½Ñ¡ï¿½ï¿½Ð¶ï¿½Ø£ï¿½ï¿½ï¿½ï¿½ï¿½Í£Ö¹ï¿½ï¿½ï¿½ÐµÄ·ï¿½ï¿½ï¿½
       Exec(ExpandConstant('{sys}\sc.exe'), 'stop DWMMonitorService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
-      // µÈ´ý·þÎñÍêÈ«Í£Ö¹
+      // ï¿½È´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«Í£Ö¹
       Sleep(2000);
 
-      // ³¢ÊÔÉ¾³ýÏÖÓÐµÄ·þÎñ
+      // ï¿½ï¿½ï¿½ï¿½É¾ï¿½ï¿½ï¿½ï¿½ï¿½ÐµÄ·ï¿½ï¿½ï¿½
       Exec(ExpandConstant('{sys}\sc.exe'), 'delete DWMMonitorService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
-      // ÔÙ´ÎµÈ´ý£¬È·±£·þÎñ±»ÍêÈ«É¾³ý
+      // ï¿½Ù´ÎµÈ´ï¿½ï¿½ï¿½È·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«É¾ï¿½ï¿½
       Sleep(1000);
     end
     else
     begin
-      // ÓÃ»§Ñ¡Ôñ²»Ð¶ÔØ£¬È¡Ïû°²×°
+      // ï¿½Ã»ï¿½Ñ¡ï¿½ï¿½Ð¶ï¿½Ø£ï¿½È¡ï¿½ï¿½ï¿½ï¿½×°
       Result := False;
     end;
   end;
@@ -77,16 +79,16 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
-    // Í£Ö¹·þÎñ
+    // Í£Ö¹ï¿½ï¿½ï¿½ï¿½
     Exec(ExpandConstant('{sys}\sc.exe'), 'stop DWMMonitorService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     
-    // ¸ø½ø³ÌÒ»Ð©Ê±¼äÀ´ÍêÈ«Í£Ö¹
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»Ð©Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«Í£Ö¹
     Sleep(2000);
     
-    // É¾³ý·þÎñ
+    // É¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     Exec(ExpandConstant('{sys}\sc.exe'), 'delete DWMMonitorService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     
-    // ÔÙ´ÎµÈ´ý£¬È·±£·þÎñ±»ÍêÈ«É¾³ý
+    // ï¿½Ù´ÎµÈ´ï¿½ï¿½ï¿½È·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«É¾ï¿½ï¿½
     Sleep(1000);
   end;
 end;
@@ -98,6 +100,8 @@ Filename: {sys}\sc.exe; Parameters: "description DWMMonitorService ""Monitors an
 Filename: {sys}\sc.exe; Parameters: "start DWMMonitorService"; Flags: runhidden
 [UninstallDelete]
 Type: files; Name: "{app}\check_restart_dwm.exe"
+Type: files; Name: "{app}\start_service.bat"
+Type: files; Name: "{app}\stop_service.bat"
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
