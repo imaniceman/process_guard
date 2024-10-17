@@ -22,12 +22,60 @@ use log4rs::append::rolling_file::policy::compound::roll::fixed_window::FixedWin
 use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
 use log4rs::append::rolling_file::RollingFileAppender;
 use simple_config_parser::Config;
+use winapi::um::processthreadsapi::{OpenProcess};
+use winapi::um::psapi::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+use winapi::um::handleapi::CloseHandle;
+use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+use winapi::shared::minwindef::DWORD;
+use winapi::um::errhandlingapi::GetLastError;
+
 const SERVICE_NAME: &str = "DWMMonitorService";
 const DEFAULT_MEMORY_THRESHOLD: u64 = 1000 * 1024 * 1024; // 1000 MB in bytes
 const INTERVAL: u64 = 60; // 60 seconds
 const CONFIG_FILE_NAME: &str = "config.cfg";
 define_windows_service!(ffi_service_main, service_main);
 
+struct MemoryInfo {
+    private_bytes: usize,
+    working_set: usize,
+}
+fn get_process_memory_info(pid: DWORD) -> Option<MemoryInfo> {
+    let mut result = MemoryInfo {
+        private_bytes: 0,
+        working_set: 0,
+    };
+    unsafe {
+        // 打开进程
+        let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid);
+        if process_handle.is_null() {
+            let error_code = GetLastError();
+            error!("Failed to open process: {}. Error code: {}", pid,error_code);
+            return None;
+        }
+
+        let mut pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+
+        // 获取进程的内存信息
+        if GetProcessMemoryInfo(
+            process_handle,
+            &mut pmc,
+            std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        ) != 0
+        {
+            info!("Process ID: {}", pid);
+            info!("Working Set Size: {} MB", pmc.WorkingSetSize / 1024 / 1024);
+            info!("Private Bytes: {} MB", pmc.PagefileUsage / 1024 / 1024);
+            result.private_bytes = pmc.PagefileUsage;
+            result.working_set = pmc.WorkingSetSize;
+        } else {
+            error!("Failed to get process memory information");
+        }
+
+        // 关闭进程句柄
+        CloseHandle(process_handle);
+    }
+    Some(result)
+}
 fn get_memory_threshold() -> u64 {
     let mut current_path = std::env::current_exe().unwrap();
     current_path.set_file_name(CONFIG_FILE_NAME);
@@ -100,10 +148,14 @@ fn monitor_dwm() {
 
         match system.processes_by_exact_name("dwm.exe".as_ref()).next() {
             Some(process) => {
-                let memory_usage = process.memory();
-                info!("当前 dwm.exe 内存使用: {} MB", memory_usage / 1024 / 1024);
+                let pid = process.pid().as_u32();
+                info!("dwm.exe 进程 ID: {}", pid);
 
-                if memory_usage > memory_threshold {
+                let info = get_process_memory_info(pid).unwrap_or(MemoryInfo { private_bytes: 0, working_set: 0 });
+                let private_bytes = info.private_bytes as u64;
+
+                // info!("当前 dwm.exe 内存使用: {} MB", private_bytes / 1024 / 1024);
+                if private_bytes > memory_threshold {
                     warn!("内存使用超过阈值 {} MB，正在重启 dwm.exe", memory_threshold / 1024 / 1024);
                     restart_dwm();
                 }
@@ -208,9 +260,5 @@ mod tests {
         assert_eq!(threshold, 1048576001);
         // 删除配置
         fs::remove_file(current_path).unwrap();
-    }
-    #[test]
-    fn test_print_private_bytes(){
-
     }
 }
