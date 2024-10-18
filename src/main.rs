@@ -2,7 +2,6 @@ use std::ffi::OsString;
 use std::process::Command;
 use std::{fs, thread};
 use std::time::Duration;
-use sysinfo::{System};
 use windows_service::{
     define_windows_service,
     service::{
@@ -23,10 +22,10 @@ use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
 use log4rs::append::rolling_file::RollingFileAppender;
 use simple_config_parser::Config;
 use winapi::um::processthreadsapi::{OpenProcess};
-use winapi::um::psapi::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+use winapi::um::psapi::{EnumProcessModules, EnumProcesses, GetModuleBaseNameW, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
-use winapi::shared::minwindef::DWORD;
+use winapi::shared::minwindef::{DWORD, HMODULE};
 use winapi::um::errhandlingapi::GetLastError;
 
 const SERVICE_NAME: &str = "DWMMonitorService";
@@ -92,7 +91,47 @@ fn get_memory_threshold() -> u64 {
     }
     DEFAULT_MEMORY_THRESHOLD
 }
+fn is_dwm_running() -> Option<DWORD> {
+    let mut process_ids: [DWORD; 1024] = [0; 1024];
+    let mut bytes_returned: DWORD = 0;
 
+    unsafe {
+        if EnumProcesses(
+            process_ids.as_mut_ptr(),
+            std::mem::size_of_val(&process_ids) as DWORD,
+            &mut bytes_returned,
+        ) == 0
+        {
+            error!("Failed to enumerate processes");
+            return None;
+        }
+
+        let num_processes = bytes_returned / std::mem::size_of::<DWORD>() as DWORD;
+
+        for i in 0..num_processes as usize {
+            let pid = process_ids[i];
+            let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid);
+            if process_handle.is_null() {
+                continue;
+            }
+
+            let mut module: HMODULE = std::ptr::null_mut();
+            let mut cb_needed: DWORD = 0;
+            if EnumProcessModules(process_handle, &mut module, std::mem::size_of::<HMODULE>() as DWORD, &mut cb_needed) != 0 {
+                let mut process_name: [u16; 260] = [0; 260];
+                if GetModuleBaseNameW(process_handle, module, process_name.as_mut_ptr(), process_name.len() as DWORD) > 0 {
+                    let process_name = String::from_utf16_lossy(&process_name);
+                    if process_name.trim_end_matches('\0').eq_ignore_ascii_case("dwm.exe") {
+                        CloseHandle(process_handle);
+                        return Some(pid);
+                    }
+                }
+            }
+            CloseHandle(process_handle);
+        }
+    }
+    None
+}
 fn restart_dwm() {
     info!("正在重启 dwm.exe 进程...");
 
@@ -108,18 +147,15 @@ fn restart_dwm() {
     thread::sleep(wait_time);
 
     // 检查 dwm.exe 是否已经重启
-    let mut system = System::new_all();
-    system.refresh_all();
 
-    if system.processes_by_exact_name("dwm.exe".as_ref()).next().is_some() {
+    if is_dwm_running().is_some() {
         info!("dwm.exe 已成功重启");
     } else {
         warn!("dwm.exe 未自动重启，等待系统处理...");
         // 持续检查，直到 dwm.exe 重新出现
         loop {
             thread::sleep(Duration::from_secs(1));
-            system.refresh_all();
-            if system.processes_by_exact_name("dwm.exe".as_ref()).next().is_some() {
+            if is_dwm_running().is_some() {
                 info!("dwm.exe 已成功启动");
                 break;
             }
@@ -128,11 +164,8 @@ fn restart_dwm() {
 }
 
 fn wait_for_dwm_restart() {
-    let mut system = System::new_all();
-
     loop {
-        system.refresh_all();
-        if system.processes_by_exact_name("dwm.exe".as_ref()).next().is_some() {
+        if is_dwm_running().is_some() {
             info!("dwm.exe 进程已成功启动");
             break;
         }
@@ -140,30 +173,22 @@ fn wait_for_dwm_restart() {
     }
 }
 fn monitor_dwm() {
-    let mut system = System::new_all();
-
     let memory_threshold = get_memory_threshold();
     loop {
-        system.refresh_all();
+        if let Some(pid) = is_dwm_running() {
+            info!("dwm.exe 进程 ID: {}", pid);
 
-        match system.processes_by_exact_name("dwm.exe".as_ref()).next() {
-            Some(process) => {
-                let pid = process.pid().as_u32();
-                info!("dwm.exe 进程 ID: {}", pid);
+            let info = get_process_memory_info(pid).unwrap_or(MemoryInfo { private_bytes: 0, working_set: 0 });
+            let private_bytes = info.private_bytes as u64;
 
-                let info = get_process_memory_info(pid).unwrap_or(MemoryInfo { private_bytes: 0, working_set: 0 });
-                let private_bytes = info.private_bytes as u64;
-
-                // info!("当前 dwm.exe 内存使用: {} MB", private_bytes / 1024 / 1024);
-                if private_bytes > memory_threshold {
-                    warn!("内存使用超过阈值 {} MB，正在重启 dwm.exe", memory_threshold / 1024 / 1024);
-                    restart_dwm();
-                }
+            // info!("当前 dwm.exe 内存使用: {} MB", private_bytes / 1024 / 1024);
+            if private_bytes > memory_threshold {
+                warn!("内存使用超过阈值 {} MB，正在重启 dwm.exe", memory_threshold / 1024 / 1024);
+                restart_dwm();
             }
-            None => {
-                warn!("未找到 dwm.exe 进程，等待系统自动重启...");
-                wait_for_dwm_restart();
-            }
+        } else {
+            warn!("未找到 dwm.exe 进程，等待系统自动重启...");
+            wait_for_dwm_restart();
         }
         thread::sleep(Duration::from_secs(INTERVAL));
     }

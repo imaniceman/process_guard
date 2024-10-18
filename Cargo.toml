@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-sysinfo = "0.32"
 windows-service = "0.7"
 log4rs = "1.3"
 log = "0.4"
