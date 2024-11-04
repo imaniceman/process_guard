@@ -1,6 +1,9 @@
+mod system_info_printer;
+mod config_manager;
+
 use std::ffi::OsString;
 use std::process::Command;
-use std::{fs, thread};
+use std::{thread};
 use std::time::Duration;
 use windows_service::{
     define_windows_service,
@@ -20,18 +23,19 @@ use log4rs::append::rolling_file::policy::compound::CompoundPolicy;
 use log4rs::append::rolling_file::policy::compound::roll::fixed_window::FixedWindowRoller;
 use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
 use log4rs::append::rolling_file::RollingFileAppender;
-use simple_config_parser::Config;
 use winapi::um::processthreadsapi::{OpenProcess};
 use winapi::um::psapi::{EnumProcessModules, EnumProcesses, GetModuleBaseNameW, GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 use winapi::shared::minwindef::{DWORD, HMODULE};
 use winapi::um::errhandlingapi::GetLastError;
+use crate::config_manager::Config;
+use crate::system_info_printer::{print_all_system_info, print_memory_status};
 
-const SERVICE_NAME: &str = "DWMMonitorService";
-const DEFAULT_MEMORY_THRESHOLD: u64 = 1000 * 1024 * 1024; // 1000 MB in bytes
-const INTERVAL: u64 = 60; // 60 seconds
-const CONFIG_FILE_NAME: &str = "config.cfg";
+const SERVICE_NAME: &str = "ProcessMonitorService";
+// const DEFAULT_MEMORY_THRESHOLD: u64 = 1000 * 1024 * 1024; // 1000 MB in bytes
+const CONFIG_FILE_NAME: &str = "process_guard_config.json";
+
 define_windows_service!(ffi_service_main, service_main);
 
 struct MemoryInfo {
@@ -61,7 +65,6 @@ fn get_process_memory_info(pid: DWORD) -> Option<MemoryInfo> {
             std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
         ) != 0
         {
-            info!("Process ID: {}", pid);
             info!("Working Set Size: {} MB", pmc.WorkingSetSize / 1024 / 1024);
             info!("Private Bytes: {} MB", pmc.PagefileUsage / 1024 / 1024);
             result.private_bytes = pmc.PagefileUsage;
@@ -75,23 +78,8 @@ fn get_process_memory_info(pid: DWORD) -> Option<MemoryInfo> {
     }
     Some(result)
 }
-fn get_memory_threshold() -> u64 {
-    let mut current_path = std::env::current_exe().unwrap();
-    current_path.set_file_name(CONFIG_FILE_NAME);
-    // 判断是否存在配置文件,如果不存在则创建一个默认的配置文件,将默认值写入配置文件
-    if fs::exists(&current_path).unwrap() {
-        let cfg = Config::new().file(&current_path).unwrap();
-        let threshold = cfg.get::<u64>("memory_threshold").unwrap();
-        info!("读取到配置文件中的内存阈值: {} MB", threshold / 1024 / 1024);
-        return threshold;
-    } else {
-        let content = format!("memory_threshold = {}", DEFAULT_MEMORY_THRESHOLD);
-        fs::write(current_path.clone(), content).unwrap();
-        info!("未找到配置文件，已创建默认配置文件 config.cfg");
-    }
-    DEFAULT_MEMORY_THRESHOLD
-}
-fn is_dwm_running() -> Option<DWORD> {
+
+fn is_process_running(name: &str) -> Option<DWORD> {
     let mut process_ids: [DWORD; 1024] = [0; 1024];
     let mut bytes_returned: DWORD = 0;
 
@@ -121,7 +109,7 @@ fn is_dwm_running() -> Option<DWORD> {
                 let mut process_name: [u16; 260] = [0; 260];
                 if GetModuleBaseNameW(process_handle, module, process_name.as_mut_ptr(), process_name.len() as DWORD) > 0 {
                     let process_name = String::from_utf16_lossy(&process_name);
-                    if process_name.trim_end_matches('\0').eq_ignore_ascii_case("dwm.exe") {
+                    if process_name.trim_end_matches('\0').eq_ignore_ascii_case(name) {
                         CloseHandle(process_handle);
                         return Some(pid);
                     }
@@ -132,73 +120,79 @@ fn is_dwm_running() -> Option<DWORD> {
     }
     None
 }
-fn restart_dwm() {
-    info!("正在重启 dwm.exe 进程...");
-
-    // 首先尝试结束 dwm.exe 进程
-    match Command::new("taskkill").args(&["/F", "/IM", "dwm.exe"]).output() {
-        Ok(_) => info!("成功执行 taskkill 命令"),
-        Err(e) => error!("执行 taskkill 命令失败: {}", e),
+fn restart_processing(name: &str, command: Option<String>) {
+    info!("正在重启 {} 进程...",name);
+    let terminate_cmd = format!("taskkill /F /IM {}", name);
+    if let Err(e) = Command::new("cmd").args(&["/C", &terminate_cmd]).output() {
+        error!("执行 taskkill 命令失败: {}", e);
+        return;
     }
-
-    // 等待一段时间，让系统有机会自动重启 dwm.exe
-    let wait_time = Duration::from_secs(10); // 等待10秒
-    info!("等待系统自动重启 dwm.exe，等待时间：{} 秒", wait_time.as_secs());
-    thread::sleep(wait_time);
-
-    // 检查 dwm.exe 是否已经重启
-
-    if is_dwm_running().is_some() {
-        info!("dwm.exe 已成功重启");
+    if let Some(cmd) = command {
+        info!("执行重启命令：{}",cmd);
+        if let Err(e) = Command::new("cmd").args(["/C", &cmd]).status() {
+            error!("命令：{}",cmd);
+            error!("执行重启命令失败: {}" ,e);
+        } else {
+            info!("成功执行重启命令");
+        }
+    }
+    // 等待 10 s
+    thread::sleep(Duration::from_secs(10));
+    if is_process_running(name).is_some() {
+        info!("{} 进程已成功重启",name);
     } else {
-        warn!("dwm.exe 未自动重启，等待系统处理...");
-        // 持续检查，直到 dwm.exe 重新出现
+        warn!("{} 进程未自动重启，等待系统处理...",name);
+        let mut loop_count = 0;
         loop {
             thread::sleep(Duration::from_secs(1));
-            if is_dwm_running().is_some() {
-                info!("dwm.exe 已成功启动");
+            if is_process_running(name).is_some() {
+                info!("{} 进程已成功启动",name);
+                break;
+            }
+            loop_count += 1;
+            if loop_count > 30 {
+                warn!("{} 进程未自动重启，等待系统处理...",name);
                 break;
             }
         }
     }
 }
 
-fn wait_for_dwm_restart() {
-    loop {
-        if is_dwm_running().is_some() {
-            info!("dwm.exe 进程已成功启动");
-            break;
-        }
-        thread::sleep(Duration::from_secs(1));
-    }
-}
-fn monitor_dwm() {
-    let memory_threshold = get_memory_threshold();
-    loop {
-        if let Some(pid) = is_dwm_running() {
-            info!("dwm.exe 进程 ID: {}", pid);
-
+fn monitor_process(config: &Config) {
+    for process in config.get_monitor_processes() {
+        if let Some(pid) = is_process_running(&process.name) {
+            info!("{} 进程 ID: {}, memory_threshold_MB：{}", &process.name,pid,process.memory_threshold_bytes/1024/1024);
             let info = get_process_memory_info(pid).unwrap_or(MemoryInfo { private_bytes: 0, working_set: 0 });
             let private_bytes = info.private_bytes as u64;
-
-            // info!("当前 dwm.exe 内存使用: {} MB", private_bytes / 1024 / 1024);
-            if private_bytes > memory_threshold {
-                warn!("内存使用超过阈值 {} MB，正在重启 dwm.exe", memory_threshold / 1024 / 1024);
-                restart_dwm();
+            if private_bytes > process.memory_threshold_bytes {
+                warn!("内存使用超过阈值 {} MB，正在重启 {}", process.memory_threshold_bytes / 1024 / 1024,&process.name);
+                restart_processing(&process.name, process.restart_command.clone());
             }
         } else {
-            warn!("未找到 dwm.exe 进程，等待系统自动重启...");
-            wait_for_dwm_restart();
+            warn!("未找到 {} 进程...",&process.name);
         }
-        thread::sleep(Duration::from_secs(INTERVAL));
+    }
+}
+
+fn monitor_processes() {
+    // let memory_threshold = get_memory_threshold();
+    // 在当前路径下
+    let mut current_path = std::env::current_exe().unwrap();
+    current_path.set_file_name(CONFIG_FILE_NAME);
+    let config_manager = config_manager::ConfigManager::new(current_path);
+    let config = config_manager.load_or_create_default();
+    loop {
+        monitor_process(&config);
+        print_memory_status();
+        thread::sleep(Duration::from_secs(config.interval_seconds));
     }
 }
 fn configure_logging() -> Result<(), Box<dyn std::error::Error>> {
     let mut log_path = std::env::current_exe()?;
-    log_path.set_file_name("dwm_monitor.log");
+    log_path.set_file_name("process_guard.log");
 
     let window_roller = FixedWindowRoller::builder()
-        .build("dwm_monitor.{}.log", 5)?; // Keep 5 backup files
+        .build("process_guard.{}.log", 5)?; // Keep 5 backup files
 
     let size_trigger = SizeTrigger::new(20 * 1024 * 1024); // Rotate after 10 MB
 
@@ -220,8 +214,8 @@ fn service_main(_arguments: Vec<OsString>) {
         eprintln!("Failed to init logger: {}", e);
         return;
     }
-    info!("DWM Monitor Service starting...");
-
+    info!("{} starting...",SERVICE_NAME);
+    print_all_system_info();
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop => {
@@ -256,34 +250,9 @@ fn service_main(_arguments: Vec<OsString>) {
         return;
     }
 
-    monitor_dwm();
+    monitor_processes();
 }
 
 fn main() -> Result<(), windows_service::Error> {
     service_dispatcher::start(SERVICE_NAME, ffi_service_main)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_memory_threshold() {
-        // 删除配置
-        let mut current_path = std::env::current_exe().unwrap();
-        current_path.set_file_name(CONFIG_FILE_NAME);
-        // 先判断存在配置文件则删除
-        // fs::remove_file(current_path.clone()).unwrap();
-        if fs::exists(current_path.clone()).unwrap() {
-            fs::remove_file(current_path.clone()).unwrap();
-        }
-        let threshold = get_memory_threshold();
-        assert_eq!(threshold, DEFAULT_MEMORY_THRESHOLD);
-        // 修改配置文件后再次加载
-        fs::write(current_path.canonicalize().unwrap(), "memory_threshold = 1048576001").unwrap();
-        let threshold = get_memory_threshold();
-        assert_eq!(threshold, 1048576001);
-        // 删除配置
-        fs::remove_file(current_path).unwrap();
-    }
 }

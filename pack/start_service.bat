@@ -4,13 +4,13 @@ openfiles >nul 2>&1
 if %errorlevel% neq 0 (
     echo This script requires administrative privileges.
     echo Please run this script as an administrator.
-    powershell -Command "Start-Process cmd -ArgumentList '/c %~dp0%~nx0' -Verb RunAs"
+    powershell -Command "Start-Process cmd -ArgumentList '/c \"\"%~dp0%~nx0\"\"' -Verb RunAs"
     exit /b 1
 )
 
-sc start DWMMonitorService
+sc start ProcessMonitorService
 if %errorlevel% neq 0 (
-    echo Failed to start DWMMonitorService
+    echo Failed to start ProcessMonitorService
     exit /b %errorlevel%
 )
-echo DWMMonitorService started successfully
+echo ProcessMonitorService started successfully

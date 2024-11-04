@@ -3,8 +3,8 @@ import os
 import subprocess
 
 # 定义源文件路径和目标文件路径
-exe_src = './target/release/check_restart_dwm.exe'
-exe_dst = './pack/check_restart_dwm.exe'
+exe_src = './target/release/process_guard.exe'
+exe_dst = './pack/process_guard.exe'
 
 # 定义 ISS 文件路径
 iss_file = './pack/pack_dwm_monitor.iss'  # 确保这个路径指向你的 .iss 文件
