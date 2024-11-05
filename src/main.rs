@@ -2,7 +2,6 @@ mod system_info_printer;
 mod config_manager;
 
 use std::ffi::OsString;
-use std::process::Command;
 use std::{thread};
 use std::time::Duration;
 use windows_service::{
@@ -29,7 +28,7 @@ use winapi::um::handleapi::CloseHandle;
 use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 use winapi::shared::minwindef::{DWORD, HMODULE};
 use winapi::um::errhandlingapi::GetLastError;
-use crate::config_manager::Config;
+use crate::config_manager::{Config, ProcessType};
 use crate::system_info_printer::{print_all_system_info, print_memory_status};
 
 const SERVICE_NAME: &str = "ProcessMonitorService";
@@ -79,6 +78,19 @@ fn get_process_memory_info(pid: DWORD) -> Option<MemoryInfo> {
     Some(result)
 }
 
+/// 获取进程运行状态,返回 PID
+///
+/// # Arguments
+///
+/// * `name`:
+///
+/// returns: Option<u32>
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
 fn is_process_running(name: &str) -> Option<DWORD> {
     let mut process_ids: [DWORD; 1024] = [0; 1024];
     let mut bytes_returned: DWORD = 0;
@@ -120,21 +132,22 @@ fn is_process_running(name: &str) -> Option<DWORD> {
     }
     None
 }
-fn restart_processing(name: &str, command: Option<String>) {
+
+fn restart_processing(name: &str, process_type: &ProcessType) {
     info!("正在重启 {} 进程...",name);
-    let terminate_cmd = format!("taskkill /F /IM {}", name);
-    if let Err(e) = Command::new("cmd").args(&["/C", &terminate_cmd]).output() {
-        error!("执行 taskkill 命令失败: {}", e);
-        return;
-    }
-    if let Some(cmd) = command {
-        info!("执行重启命令：{}",cmd);
-        if let Err(e) = Command::new("cmd").args(["/C", &cmd]).status() {
-            error!("命令：{}",cmd);
-            error!("执行重启命令失败: {}" ,e);
-        } else {
-            info!("成功执行重启命令");
+    let result = process_type.kill_process(name);
+    match result {
+        Err(e) => {
+            error!("执行 taskkill 命令失败: {:?}", e);
+            return;
         }
+        Ok(output) => info!("成功执行 taskkill 命令: {:?}", output),
+    }
+
+    let result = process_type.execute();
+    match result {
+        Ok(output) => {info!("成功执行命令:{:?}",output)}
+        Err(error) => {error!("执行命令失败：{:?}",error)}
     }
     // 等待 10 s
     thread::sleep(Duration::from_secs(10));
@@ -166,10 +179,18 @@ fn monitor_process(config: &Config) {
             let private_bytes = info.private_bytes as u64;
             if private_bytes > process.memory_threshold_bytes {
                 warn!("内存使用超过阈值 {} MB，正在重启 {}", process.memory_threshold_bytes / 1024 / 1024,&process.name);
-                restart_processing(&process.name, process.restart_command.clone());
+                restart_processing(&process.name, &process.process_type);
             }
         } else {
             warn!("未找到 {} 进程...",&process.name);
+            if process.auto_start {
+                info!("正在启动 {} 进程...", &process.name);
+                let result = process.process_type.execute();
+                match result {
+                    Ok(output) => {info!("成功执行命令:{:?}",output)}
+                    Err(error) => {error!("执行命令失败：{:?}",error)}
+                }
+            }
         }
     }
 }
@@ -187,6 +208,7 @@ fn monitor_processes() {
         thread::sleep(Duration::from_secs(config.interval_seconds));
     }
 }
+
 fn configure_logging() -> Result<(), Box<dyn std::error::Error>> {
     let mut log_path = std::env::current_exe()?;
     log_path.set_file_name("process_guard.log");
