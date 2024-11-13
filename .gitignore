@@ -1,2 +1,5 @@
 /target
 /.idea/*
+Cargo.lock
+config.*
+*.exe
