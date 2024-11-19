@@ -1,0 +1,17 @@
+{
+  "processes": [
+    {
+      "name": "dwm.exe",
+      "memory_threshold_bytes": 1048576000,
+      "process_type": "System",
+      "auto_start": false
+    },
+    {
+      "name": "Microsoft.photos.exe",
+      "memory_threshold_bytes": 2048576000,
+      "process_type": "System",
+      "auto_start": false
+    }
+  ],
+  "interval_seconds": 60
+}

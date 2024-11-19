@@ -2,6 +2,7 @@
 name = "process_guard"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 windows-service = "0.7"

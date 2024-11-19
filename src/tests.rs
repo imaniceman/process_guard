@@ -40,11 +40,15 @@ mod tests {
 
     #[test]
     fn test_config_manager_load_exist_config() {
+        // Delete Config first
+        if std::fs::metadata("config.json").is_ok() {
+            std::fs::remove_file("config.json").unwrap();
+        }
         // Write a Config
         let path = PathBuf::from("config.json");
         let config_manager = ConfigManager::new(path);
         let config = config_manager.load_or_create_default();
-        assert_eq!(config.processes.len(), 1);
+        assert_eq!(config.processes.len(), 2);
         assert_eq!(config.processes[0].name, "dwm.exe");
         assert_eq!(
             config.processes[0].memory_threshold_bytes,

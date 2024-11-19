@@ -1,6 +1,8 @@
 use crate::process_manager::ProcessType;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+include!(concat!(env!("OUT_DIR"), "/default_config.rs"));
 // Structs and Enums
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MonitoredProcess {
@@ -34,16 +36,8 @@ fn default_interval_seconds() -> u64 {
 // Config Methods
 impl Config {
     fn default() -> Config {
-        Config {
-            processes: vec![MonitoredProcess {
-                name: "dwm.exe".to_string(),
-                memory_threshold_bytes: 1000 * 1024 * 1024, // 1000 MB
-                process_type: Default::default(),
-                auto_start: false,
-            }],
-            interval_seconds: 60,
-        }
-    }
+      serde_json::from_str(DEFAULT_CONFIG_JSON).unwrap()
+     }
 
     pub fn get_monitor_processes(&self) -> &Vec<MonitoredProcess> {
         &self.processes
