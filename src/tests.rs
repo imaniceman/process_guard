@@ -2,10 +2,9 @@
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-
+    use log::info;
     use crate::config_manager::*;
     use crate::process_manager::*;
-
     #[test]
     fn test_config_manager_create_default_and_save() {
         // bak and delete config.json
@@ -56,4 +55,29 @@ mod tests {
         );
         assert_eq!(config.interval_seconds, 60);
     }
+    #[test]
+    fn test_get_all_process(){
+        // 开始计时
+        let start = std::time::Instant::now();
+        let result = get_all_processes();
+        let duration = std::time::Instant::now().duration_since(start);
+        info!("get_all_processes() duration: {:?}", duration);
+        assert!(result.is_some());
+    }
+   #[test]
+   fn test_monitor_processes(){
+       let config = Config{
+           processes: vec![
+               MonitoredProcess{
+                   name: "dwm.exe".to_string(),
+                   memory_threshold_bytes: 1000 * 1024 * 1024,
+                   process_type: ProcessType::System,
+                   auto_start: false,
+               }
+           ],
+           interval_seconds: 10,
+           insert_into_db: true,
+       };
+       monitor_process(&config);
+   }
 }

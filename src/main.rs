@@ -3,6 +3,7 @@ mod logging;
 mod process_manager;
 mod system_info_printer;
 mod tests;
+mod db_manager;
 
 use log::{error, info};
 use process_manager::monitor_processes;

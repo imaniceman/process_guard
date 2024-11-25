@@ -51,20 +51,20 @@ fn print_system_info() {
     });
 }
 fn log_memory_status(mem_status: &MEMORYSTATUSEX) {
-    let div_mb = 1024 * 1024;
+    const MB: u64 = 1024 * 1024;
 
-    let avaiable_physical_memory = mem_status.ullAvailPhys / div_mb;
-    let total_physical_memory = mem_status.ullTotalPhys / div_mb;
-    let used_physical_memory = total_physical_memory - avaiable_physical_memory;
+    let available_physical_memory = mem_status.ullAvailPhys / MB;
+    let total_physical_memory = mem_status.ullTotalPhys / MB;
+    let used_physical_memory = total_physical_memory - available_physical_memory;
 
-    let total_virtual_available_mb = mem_status.ullTotalPageFile / div_mb  - total_physical_memory;
-    let used_virtual_memory_mb = mem_status.ullTotalPageFile / div_mb - mem_status.ullAvailPageFile / div_mb - used_physical_memory;
+    let total_virtual_available_mb = mem_status.ullTotalPageFile / MB - total_physical_memory;
+    let used_virtual_memory_mb = mem_status.ullAvailPageFile / MB;
     let available_virtual_memory_mb = total_virtual_available_mb - used_virtual_memory_mb;
-    
+
     info!("Memory Load: {}%", mem_status.dwMemoryLoad);
     info!(
         "Physical Used / Total (MB) : {:>5} / {:>5} , Available {:>5}",
-        used_physical_memory, total_physical_memory,avaiable_physical_memory
+        used_physical_memory, total_physical_memory, available_physical_memory
     );
     info!(
         "Virtual Used / Total  (MB) : {:>5} / {:>5} , Available {:>5}",

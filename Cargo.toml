@@ -11,8 +11,12 @@ log = "0.4"
 wmi = "0.14"
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
+rusqlite = { version = "0.32.1",features = ["bundled"] }
+lazy_static = "1.5"
+
+
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["winuser", "psapi", "winnt", "errhandlingapi", "sysinfoapi", "memoryapi", "libloaderapi", "ntdef","userenv","wtsapi32","securitybaseapi"] }
+winapi = { version = "0.3.9", features = ["winuser", "psapi", "winnt", "errhandlingapi", "sysinfoapi", "memoryapi", "libloaderapi", "ntdef","userenv","wtsapi32","securitybaseapi","tlhelp32"] }
 wmi = "0.14"
 
 [dev-dependencies]

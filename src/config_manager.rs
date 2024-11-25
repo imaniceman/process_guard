@@ -19,6 +19,8 @@ pub struct Config {
     pub processes: Vec<MonitoredProcess>,
     #[serde(default = "default_interval_seconds")]
     pub interval_seconds: u64,
+    #[serde(default)]
+    pub insert_into_db: bool,
 }
 
 pub struct ConfigManager {
