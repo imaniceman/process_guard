@@ -367,7 +367,7 @@ pub fn monitor_process(config: &Config) {
         }
     };
 
-    if config.insert_into_db {
+    if config.db_config.insert_into_db {
         match DB_CONNECTION.lock() {
             Ok(mut conn) => {
                 if let Err(e) = conn.execute_batch_insert(process_infos.as_slice()) {

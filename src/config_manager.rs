@@ -19,12 +19,44 @@ pub struct Config {
     pub processes: Vec<MonitoredProcess>,
     #[serde(default = "default_interval_seconds")]
     pub interval_seconds: u64,
+    #[serde(default = "default_db_config")]
+    pub db_config:DBConfig,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DBConfig {
     #[serde(default)]
     pub insert_into_db: bool,
+    #[serde(default = "default_db_cleanup_hours")]
+    pub db_cleanup_hours: i64,
+    #[serde(default = "default_db_vacuum_threshold_mb")]
+    pub db_vacuum_threshold_mb: u64,
+    #[serde(default = "default_cleanup_interval_hours")]
+    pub cleanup_interval_hours: i64,
 }
 
 pub struct ConfigManager {
     path: PathBuf,
+}
+
+pub fn default_db_config() ->DBConfig{
+    DBConfig{
+        insert_into_db: true,
+        db_cleanup_hours: default_db_cleanup_hours(),
+        db_vacuum_threshold_mb: default_db_vacuum_threshold_mb(),
+        cleanup_interval_hours: default_cleanup_interval_hours(),
+    }
+}
+
+pub fn default_cleanup_interval_hours() -> i64 {
+    12
+}
+
+fn default_db_cleanup_hours() -> i64 {
+    24 * 30
+}
+
+fn default_db_vacuum_threshold_mb() -> u64 {
+    500
 }
 
 fn default_auto_start() -> bool {
@@ -38,8 +70,8 @@ fn default_interval_seconds() -> u64 {
 // Config Methods
 impl Config {
     fn default() -> Config {
-      serde_json::from_str(DEFAULT_CONFIG_JSON).unwrap()
-     }
+        serde_json::from_str(DEFAULT_CONFIG_JSON).unwrap()
+    }
 
     pub fn get_monitor_processes(&self) -> &Vec<MonitoredProcess> {
         &self.processes

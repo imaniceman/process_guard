@@ -21,3 +21,4 @@ wmi = "0.14"
 
 [dev-dependencies]
 ctor = "0.2"
+chrono = "0.4"

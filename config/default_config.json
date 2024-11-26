@@ -14,5 +14,10 @@
     }
   ],
   "interval_seconds": 60,
-  "insert_into_db" : true
+  "db_config": {
+    "insert_into_db": true,
+    "db_cleanup_hours": 720,
+    "db_vacuum_threshold_mb": 500,
+    "cleanup_interval_hours":12
+  }
 }

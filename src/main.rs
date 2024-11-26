@@ -1,14 +1,15 @@
 mod config_manager;
+mod db_manager;
 mod logging;
 mod process_manager;
 mod system_info_printer;
 mod tests;
-mod db_manager;
 
 use log::{error, info};
 use process_manager::monitor_processes;
-use std::ffi::OsString;
+use std::sync::Arc;
 use std::time::Duration;
+use std::{ffi::OsString, thread};
 use windows_service::{
     define_windows_service,
     service::{
@@ -75,6 +76,29 @@ fn service_main(_arguments: Vec<OsString>) {
         return;
     }
     let config = load_config();
+
+    info!("{:#?}", config);
+    // 启动一个独立的线程，进行数据库清理工作
+    let db_cleanup_interval = config.db_config.cleanup_interval_hours;
+    let db_cleanup_hours = config.db_config.db_cleanup_hours;
+    let db_vacuum_threshold_mb = config.db_config.db_vacuum_threshold_mb;
+
+    let db_connection = Arc::new(&db_manager::DB_CONNECTION);
+
+    thread::spawn(move || {
+        loop {
+            {
+                info!("Starting database cleanup...");
+                let mut db_conn = db_connection.lock().unwrap();
+                match db_conn.cleanup_old_data(db_cleanup_hours, db_vacuum_threshold_mb) {
+                    Ok(_) => info!("Database cleanup completed successfully."),
+                    Err(e) => error!("Database cleanup failed: {}", e),
+                }
+            }
+            // 休眠指定的时间间隔
+            thread::sleep(Duration::from_secs((db_cleanup_interval * 3600) as u64));
+        }
+    });
     monitor_processes(&config);
 }
 
