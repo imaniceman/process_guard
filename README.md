@@ -131,5 +131,3 @@ cargo test
 ## 许可证
 
 此项目使用 MIT 许可证 - 有关详细信息，请参阅 [LICENSE](LICENSE) 文件。
-
-希望这对你有帮助！
