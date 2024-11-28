@@ -13,14 +13,15 @@ ProcessGuard 是一个用于监控和管理系统进程的工具。
 
 ## 依赖
 
-- windows-service
-- log4rs
-- log
-- wmi
-- serde
-- serde_json
-- rusqlite
-- lazy_static
+### 开发&编译
+
+- [Rust](https://www.rust-lang.org/)
+
+### 打包
+
+- [Python](https://www.python.org/)
+- [Inno Setup](https://www.jrsoftware.org/isinfo.php)
+
 
 ## 项目结构
 
