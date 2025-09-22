@@ -49,7 +49,7 @@ ProcessGuard 是一个用于监控和管理系统进程的工具。
     ├──  system_info_printer.rs
     └──  tests.rs
 ```
-
+> 默认配置文件位于 `config/default_config.json`，构建时会自动写到程序中
 ## 构建和运行
 
 ### 构建
@@ -74,7 +74,7 @@ just package
 
 ### 配置
 
-默认配置文件位于 `config/default_config.json`。配置文件的结构如下：
+> 安装成功后，会在安装目录下自动生成 `config.json` 文件，可以在此文件中修改配置。
 
 ```json
 {
@@ -114,7 +114,7 @@ just package
   - `db_vacuum_threshold_mb`: 数据库真空操作的阈值，单位为MB。
   - `cleanup_interval_hours`: 数据库清理操作的时间间隔，单位为小时。
 
-> 安装成功后，会在安装目录下自动生成 `config.json` 文件，可以在此文件中修改配置。
+
 
 ### 测试
 
@@ -127,7 +127,7 @@ cargo test
 ## 使用
 
 1. 安装后无需操作，服务会自动运行。
-2. 如果需要手动启动或停止服务，可以运行 `pack/start_service.bat` 和 `pack/stop_service.bat`。
+2. 如果需要手动启动或停止服务，可以运行 `start_service.bat` 和 `stop_service.bat`。
 
 ## 许可证
 
