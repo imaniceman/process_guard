@@ -27,6 +27,8 @@ mod tests {
             memory_threshold_bytes: 50 * 1024 * 1024,
             process_type: ProcessType::User("powershell -Command \"Start-Process -FilePath 'D:\\ISV\\rf_guide\\RF_Guide.exe' -WorkingDirectory 'D:\\ISV\\rf_guide'\"".to_string(), 1),
             auto_start: true,
+            restart_all_on_threshold: false,
+            cooldown_seconds: 60,
         });
         config_manager.save(&config);
         let config = config_manager.load_or_create_default();
@@ -73,6 +75,8 @@ mod tests {
                 memory_threshold_bytes: 1000 * 1024 * 1024,
                 process_type: ProcessType::System,
                 auto_start: false,
+                restart_all_on_threshold: false,
+                cooldown_seconds: 60,
             }],
             interval_seconds: 10,
             db_config: default_db_config(),

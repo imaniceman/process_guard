@@ -2,8 +2,8 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "ProcessGuard"
-#define MyAppVersion "1.5"
-#define MyAppPublisher "ISVision(Hangzhou) Technology Co., Ltd"
+#define MyAppVersion "v2.0.0"
+#define MyAppPublisher "ISVision(Hangzhou) Technology Co., Ltd."
 #define MyAppURL "https://www.isv-tech.com/"
 #define MyAppBuildTime GetDateTimeString('yyyymmdd', '', '')
 

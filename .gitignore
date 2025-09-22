@@ -4,6 +4,6 @@ Cargo.lock
 config.*
 *.exe
 /*.db
-pack/ProcessMonitorSetup_20241127.zip
-pack/releasenote.pdf
-scripts/process_info.db
+pack/ProcessMonitorSetup_*.zip
+pack/*.pdf
+scripts/*.db

@@ -84,7 +84,10 @@ impl DBConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{os::windows::fs::MetadataExt, time::{Duration, SystemTime}};
+    use std::{
+        os::windows::fs::MetadataExt,
+        time::{Duration, SystemTime},
+    };
 
     fn insert_test_data(conn: &mut DBConnection, days_ago: i64) -> Result<()> {
         let timestamp = SystemTime::now() - Duration::from_secs(days_ago as u64 * 24 * 60 * 60);
@@ -161,12 +164,11 @@ mod tests {
         conn.cleanup_old_data(8, 20).unwrap();
         // 此时数据库大小未被修改
         let expected_size = fs::metadata(file).unwrap().file_size();
-        assert_eq!(file_size,expected_size);
+        assert_eq!(file_size, expected_size);
         conn.cleanup_old_data(8, 10).unwrap();
 
         let expected_size = fs::metadata(file).unwrap().file_size();
-        assert_ne!(file_size,expected_size);
-        
+        assert_ne!(file_size, expected_size);
     }
     #[test]
     fn test_execute_batch_insert() {

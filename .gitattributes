@@ -1,0 +1,8 @@
+﻿* text=auto
+
+*.rs text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.iss text eol=crlf
+*.bat text eol=crlf

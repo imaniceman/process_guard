@@ -1,8 +1,15 @@
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Mutex;
 use std::{
-    ffi::OsStr, io, os::windows::ffi::OsStrExt, process::Command, ptr::null_mut, thread,
-    time::Duration,
+    ffi::OsStr,
+    io,
+    os::windows::ffi::OsStrExt,
+    process::Command,
+    ptr::null_mut,
+    thread,
+    time::{Duration, Instant},
 };
 use winapi::{
     shared::minwindef::{DWORD, HMODULE},
@@ -43,6 +50,10 @@ impl ProcessInfo {
     }
 }
 
+lazy_static! {
+    static ref LAST_RESTART_TIMES: Mutex<HashMap<String, Instant>> = Mutex::new(HashMap::new());
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ProcessType {
     System,
@@ -72,8 +83,22 @@ impl ProcessType {
         }
     }
 
-    pub fn kill_process(&self, name: &str) -> Result<String, io::Error> {
+    pub fn kill_process_by_name(&self, name: &str) -> Result<String, io::Error> {
         let terminate_cmd = format!("taskkill /F /IM {}", name);
+        ProcessType::execute_cmd(&terminate_cmd)
+    }
+
+    pub fn kill_processes_by_pid(&self, pids: &[DWORD]) -> Result<String, io::Error> {
+        if pids.is_empty() {
+            return Ok(String::new());
+        }
+
+        let mut terminate_cmd = String::from("taskkill /F");
+        for pid in pids {
+            terminate_cmd.push_str(" /PID ");
+            terminate_cmd.push_str(&pid.to_string());
+        }
+
         ProcessType::execute_cmd(&terminate_cmd)
     }
 
@@ -174,11 +199,13 @@ fn to_wide_string(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(Some(0)).collect()
 }
 
-pub fn find_processes_by_name(name: &str, processes: &[ProcessInfo]) -> Vec<ProcessInfo> {
+pub fn find_processes_by_name<'a>(
+    name: &str,
+    processes: &'a [ProcessInfo],
+) -> Vec<&'a ProcessInfo> {
     processes
         .iter()
         .filter(|process| process.name.eq_ignore_ascii_case(name))
-        .cloned()
         .collect()
 }
 
@@ -191,24 +218,39 @@ pub fn is_process_running(name: &str, processes: &[ProcessInfo]) -> Option<Proce
     None
 }
 
-pub fn restart_processing(name: &str, process_type: &ProcessType) {
-    info!("正在重启 {} 进程...", name);
-    let result = process_type.kill_process(name);
+pub fn restart_processing(
+    name: &str,
+    process_type: &ProcessType,
+    restart_all: bool,
+    target_pids: &[DWORD],
+) {
+    if restart_all {
+        info!("Attempting to terminate all {} instances by name...", name);
+    } else {
+        info!("Terminating exceeded {} PIDs: {:?}", name, target_pids);
+    }
+
+    let result = if restart_all {
+        process_type.kill_process_by_name(name)
+    } else {
+        process_type.kill_processes_by_pid(target_pids)
+    };
+
     match result {
         Err(e) => {
-            error!("执行 taskkill 命令失败: {:?}", e);
+            error!("Failed to execute taskkill command: {:?}", e);
             return;
         }
-        Ok(output) => info!("成功执行 taskkill 命令: {:?}", output),
+        Ok(output) => info!("Successfully executed taskkill: {:?}", output),
     }
 
     let result = process_type.execute();
     match result {
         Ok(output) => {
-            info!("成功执行命令:{:?}", output)
+            info!("Successfully executed start command: {:?}", output)
         }
         Err(error) => {
-            error!("执行命令失败：{:?}", error)
+            error!("Start command failed: {:?}", error)
         }
     }
     thread::sleep(Duration::from_secs(10));
@@ -220,9 +262,12 @@ pub fn restart_processing(name: &str, process_type: &ProcessType) {
         }
     };
     if is_process_running(name, process_infos.as_slice()).is_some() {
-        info!("{} 进程已成功重启", name);
+        info!("{} restarted successfully", name);
     } else {
-        warn!("{} 进程未自动重启，等待系统处理...", name);
+        warn!(
+            "{} failed to restart automatically, waiting for system...",
+            name
+        );
         let mut loop_count = 0;
         loop {
             thread::sleep(Duration::from_secs(1));
@@ -235,12 +280,15 @@ pub fn restart_processing(name: &str, process_type: &ProcessType) {
                 }
             };
             if is_process_running(name, process_infos.as_slice()).is_some() {
-                info!("{} 进程已成功启动", name);
+                info!("{} restarted successfully", name);
                 break;
             }
             loop_count += 1;
             if loop_count > 30 {
-                warn!("{} 进程未自动重启，等待系统处理...", name);
+                warn!(
+                    "{} failed to restart automatically, waiting for system...",
+                    name
+                );
                 break;
             }
         }
@@ -366,6 +414,17 @@ pub fn get_all_processes() -> Option<Vec<ProcessInfo>> {
         Some(result)
     }
 }
+fn build_process_index<'a>(processes: &'a [ProcessInfo]) -> HashMap<String, Vec<&'a ProcessInfo>> {
+    let mut index: HashMap<String, Vec<&'a ProcessInfo>> = HashMap::new();
+    for process in processes {
+        index
+            .entry(process.name.to_ascii_lowercase())
+            .or_default()
+            .push(process);
+    }
+    index
+}
+
 pub fn monitor_process(config: &Config) {
     let process_infos = match get_all_processes() {
         Some(infos) => infos,
@@ -386,55 +445,107 @@ pub fn monitor_process(config: &Config) {
         }
     }
 
+    let process_index = build_process_index(process_infos.as_slice());
+
     for process_config in config.get_monitor_processes() {
-        let matching_processes = find_processes_by_name(&process_config.name, process_infos.as_slice());
-        
-        if !matching_processes.is_empty() {
+        let name_key = process_config.name.to_ascii_lowercase();
+        if let Some(matching_processes) = process_index.get(&name_key) {
             info!(
-                "找到 {} 个 {} 进程，内存阈值：{} MB",
+                "Found {} {} processes, threshold {} MB",
                 matching_processes.len(),
                 &process_config.name,
                 process_config.memory_threshold_bytes / 1024 / 1024
             );
-            
-            let mut should_restart = false;
-            
-            for process in &matching_processes {
-                info!(
-                    "{} 进程 ID: {}",
-                    &process_config.name,
-                    process.pid
-                );
+
+            let mut private_bytes_values: Vec<u64> = Vec::with_capacity(matching_processes.len());
+            let mut exceeded_pids: Vec<DWORD> = Vec::new();
+
+            for process in matching_processes.iter() {
+                info!("{} process ID: {}", &process_config.name, process.pid);
                 process.print_process_memory_info();
-                
+
                 let private_bytes = process.private_bytes as u64;
+                private_bytes_values.push(private_bytes);
+
                 if private_bytes > process_config.memory_threshold_bytes {
                     warn!(
-                        "进程 ID {} 内存使用超过阈值 {} MB（当前 {} MB），需要重启 {}",
+                        "Process ID {} exceeded threshold {} MB, current {} MB for {}",
                         process.pid,
                         process_config.memory_threshold_bytes / 1024 / 1024,
                         private_bytes / 1024 / 1024,
                         &process_config.name
                     );
-                    should_restart = true;
+                    exceeded_pids.push(process.pid);
                 }
             }
-            
-            if should_restart {
-                info!("存在超出内存限制的 {} 进程，正在重启所有 {} 进程...", &process_config.name, &process_config.name);
-                restart_processing(&process_config.name, &process_config.process_type);
+
+            if !private_bytes_values.is_empty() {
+                let max = *private_bytes_values.iter().max().unwrap();
+                let min = *private_bytes_values.iter().min().unwrap();
+                let total: u64 = private_bytes_values.iter().sum();
+                let avg = total / private_bytes_values.len() as u64;
+                info!(
+                    "{} memory stats => max: {} MB, min: {} MB, avg: {} MB, total: {} MB",
+                    &process_config.name,
+                    max / 1024 / 1024,
+                    min / 1024 / 1024,
+                    avg / 1024 / 1024,
+                    total / 1024 / 1024
+                );
+            }
+
+            if !exceeded_pids.is_empty() {
+                let restart_all = process_config.restart_all_on_threshold;
+                let restart_targets: Vec<DWORD> = if restart_all {
+                    matching_processes
+                        .iter()
+                        .map(|process| process.pid)
+                        .collect()
+                } else {
+                    exceeded_pids.clone()
+                };
+
+                info!(
+                    "{} restart triggered, restart_all={}, target PIDs: {:?}",
+                    &process_config.name, restart_all, restart_targets
+                );
+
+                let cooldown = Duration::from_secs(process_config.cooldown_seconds);
+                let now = Instant::now();
+                let mut last_restart_map = LAST_RESTART_TIMES.lock().unwrap();
+                if let Some(last) = last_restart_map.get(&name_key) {
+                    let elapsed = now.duration_since(*last);
+                    if elapsed < cooldown {
+                        let remaining = (cooldown - elapsed).as_secs();
+                        info!(
+                            "{} cooldown remaining {} seconds, skip restart. exceeded PIDs: {:?}",
+                            &process_config.name, remaining, exceeded_pids
+                        );
+                        drop(last_restart_map);
+                        continue;
+                    }
+                }
+                last_restart_map.insert(name_key.clone(), now);
+                drop(last_restart_map);
+
+                restart_processing(
+                    &process_config.name,
+                    &process_config.process_type,
+                    restart_all,
+                    &restart_targets,
+                );
             }
         } else {
-            warn!("未找到 {} 进程...", &process_config.name);
+            warn!("{} not found...", &process_config.name);
             if process_config.auto_start {
-                info!("正在启动 {} 进程...", &process_config.name);
+                info!("Attempting to start {}...", &process_config.name);
                 let result = process_config.process_type.execute();
                 match result {
                     Ok(output) => {
-                        info!("成功执行命令:{:?}", output)
+                        info!("Successfully executed start command: {:?}", output)
                     }
                     Err(error) => {
-                        error!("执行命令失败：{:?}", error)
+                        error!("Start command failed: {:?}", error)
                     }
                 }
             }
@@ -447,5 +558,41 @@ pub fn monitor_processes(config: &Config) {
         monitor_process(config);
         print_memory_status();
         thread::sleep(Duration::from_secs(config.interval_seconds));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_process(name: &str, pid: DWORD, memory: usize) -> ProcessInfo {
+        ProcessInfo {
+            name: name.to_string(),
+            pid,
+            thread_count: 0,
+            private_bytes: memory,
+            working_set: memory,
+        }
+    }
+
+    #[test]
+    fn find_processes_by_name_is_case_insensitive() {
+        let processes = vec![
+            sample_process("foo.exe", 1, 128),
+            sample_process("FOO.EXE", 2, 256),
+            sample_process("bar.exe", 3, 512),
+        ];
+
+        let matches = find_processes_by_name("foo.exe", &processes);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].pid, 1);
+        assert_eq!(matches[1].pid, 2);
+    }
+
+    #[test]
+    fn find_processes_by_name_returns_empty_when_no_matches() {
+        let processes = vec![sample_process("foo.exe", 1, 128)];
+        let matches = find_processes_by_name("baz.exe", &processes);
+        assert!(matches.is_empty());
     }
 }

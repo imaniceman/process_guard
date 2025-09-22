@@ -12,6 +12,10 @@ pub struct MonitoredProcess {
     pub process_type: ProcessType,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
+    #[serde(default = "default_restart_all_on_threshold")]
+    pub restart_all_on_threshold: bool,
+    #[serde(default = "default_cooldown_seconds")]
+    pub cooldown_seconds: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -20,7 +24,7 @@ pub struct Config {
     #[serde(default = "default_interval_seconds")]
     pub interval_seconds: u64,
     #[serde(default = "default_db_config")]
-    pub db_config:DBConfig,
+    pub db_config: DBConfig,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DBConfig {
@@ -38,8 +42,8 @@ pub struct ConfigManager {
     path: PathBuf,
 }
 
-pub fn default_db_config() ->DBConfig{
-    DBConfig{
+pub fn default_db_config() -> DBConfig {
+    DBConfig {
         insert_into_db: true,
         db_cleanup_hours: default_db_cleanup_hours(),
         db_vacuum_threshold_mb: default_db_vacuum_threshold_mb(),
@@ -61,6 +65,14 @@ fn default_db_vacuum_threshold_mb() -> u64 {
 
 fn default_auto_start() -> bool {
     false
+}
+
+fn default_restart_all_on_threshold() -> bool {
+    false
+}
+
+fn default_cooldown_seconds() -> u64 {
+    60
 }
 
 fn default_interval_seconds() -> u64 {
