@@ -174,6 +174,14 @@ fn to_wide_string(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(Some(0)).collect()
 }
 
+pub fn find_processes_by_name(name: &str, processes: &[ProcessInfo]) -> Vec<ProcessInfo> {
+    processes
+        .iter()
+        .filter(|process| process.name.eq_ignore_ascii_case(name))
+        .cloned()
+        .collect()
+}
+
 pub fn is_process_running(name: &str, processes: &[ProcessInfo]) -> Option<ProcessInfo> {
     for process in processes {
         if process.name.eq_ignore_ascii_case(name) {
@@ -379,21 +387,41 @@ pub fn monitor_process(config: &Config) {
     }
 
     for process_config in config.get_monitor_processes() {
-        if let Some(process) = is_process_running(&process_config.name, process_infos.as_slice()) {
+        let matching_processes = find_processes_by_name(&process_config.name, process_infos.as_slice());
+        
+        if !matching_processes.is_empty() {
             info!(
-                "{} 进程 ID: {}, memory_threshold_MB：{}",
+                "找到 {} 个 {} 进程，内存阈值：{} MB",
+                matching_processes.len(),
                 &process_config.name,
-                process.pid,
                 process_config.memory_threshold_bytes / 1024 / 1024
             );
-            process.print_process_memory_info();
-            let private_bytes = process.private_bytes as u64;
-            if private_bytes > process_config.memory_threshold_bytes {
-                warn!(
-                    "内存使用超过阈值 {} MB，正在重启 {}",
-                    process_config.memory_threshold_bytes / 1024 / 1024,
-                    &process_config.name
+            
+            let mut should_restart = false;
+            
+            for process in &matching_processes {
+                info!(
+                    "{} 进程 ID: {}",
+                    &process_config.name,
+                    process.pid
                 );
+                process.print_process_memory_info();
+                
+                let private_bytes = process.private_bytes as u64;
+                if private_bytes > process_config.memory_threshold_bytes {
+                    warn!(
+                        "进程 ID {} 内存使用超过阈值 {} MB（当前 {} MB），需要重启 {}",
+                        process.pid,
+                        process_config.memory_threshold_bytes / 1024 / 1024,
+                        private_bytes / 1024 / 1024,
+                        &process_config.name
+                    );
+                    should_restart = true;
+                }
+            }
+            
+            if should_restart {
+                info!("存在超出内存限制的 {} 进程，正在重启所有 {} 进程...", &process_config.name, &process_config.name);
                 restart_processing(&process_config.name, &process_config.process_type);
             }
         } else {

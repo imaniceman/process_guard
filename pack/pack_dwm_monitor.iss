@@ -3,7 +3,7 @@
 
 #define MyAppName "ProcessGuard"
 #define MyAppVersion "1.5"
-#define MyAppPublisher "ISV, Inc."
+#define MyAppPublisher "ISVision(Hangzhou) Technology Co., Ltd"
 #define MyAppURL "https://www.isv-tech.com/"
 #define MyAppBuildTime GetDateTimeString('yyyymmdd', '', '')
 
@@ -14,7 +14,7 @@ AppId={{B1DC994A-A51B-4EB8-BF80-759BD78EB736}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 ;AppVerName={#MyAppName} {#MyAppVersion}
-;AppPublisher={#MyAppPublisher}
+AppPublisher={#MyAppPublisher}
 ;AppPublisherURL={#MyAppURL}
 ;AppSupportURL={#MyAppURL}
 ;AppUpdatesURL={#MyAppURL}
